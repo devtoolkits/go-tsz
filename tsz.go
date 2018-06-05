@@ -161,17 +161,17 @@ func (s *Series) Iter() *Iter {
 type Iter struct {
 	T0 uint32
 
-	t   uint32
-	val float64
+	T   uint32
+	Val float64
 
-	br       bstream
-	leading  uint8
-	trailing uint8
+	Br       bstream
+	Leading  uint8
+	Trailing uint8
 
-	finished bool
+	Finished bool
 
-	tDelta uint32
-	err    error
+	TDelta uint32
+	Error  error
 }
 
 func bstreamIterator(br *bstream) (*Iter, error) {
@@ -185,7 +185,7 @@ func bstreamIterator(br *bstream) (*Iter, error) {
 
 	return &Iter{
 		T0: uint32(t0),
-		br: *br,
+		Br: *br,
 	}, nil
 }
 
@@ -197,26 +197,26 @@ func NewIterator(b []byte) (*Iter, error) {
 // Next iteration of the series iterator
 func (it *Iter) Next() bool {
 
-	if it.err != nil || it.finished {
+	if it.Error != nil || it.Finished {
 		return false
 	}
 
-	if it.t == 0 {
+	if it.T == 0 {
 		// read first t and v
-		tDelta, err := it.br.readBits(14)
+		tDelta, err := it.Br.readBits(14)
 		if err != nil {
-			it.err = err
+			it.Error = err
 			return false
 		}
-		it.tDelta = uint32(tDelta)
-		it.t = it.T0 + it.tDelta
-		v, err := it.br.readBits(64)
+		it.TDelta = uint32(tDelta)
+		it.T = it.T0 + it.TDelta
+		v, err := it.Br.readBits(64)
 		if err != nil {
-			it.err = err
+			it.Error = err
 			return false
 		}
 
-		it.val = math.Float64frombits(v)
+		it.Val = math.Float64frombits(v)
 
 		return true
 	}
@@ -225,9 +225,9 @@ func (it *Iter) Next() bool {
 	var d byte
 	for i := 0; i < 4; i++ {
 		d <<= 1
-		bit, err := it.br.readBit()
+		bit, err := it.Br.readBit()
 		if err != nil {
-			it.err = err
+			it.Error = err
 			return false
 		}
 		if bit == zero {
@@ -248,15 +248,15 @@ func (it *Iter) Next() bool {
 	case 0x0e:
 		sz = 12
 	case 0x0f:
-		bits, err := it.br.readBits(32)
+		bits, err := it.Br.readBits(32)
 		if err != nil {
-			it.err = err
+			it.Error = err
 			return false
 		}
 
 		// end of stream
 		if bits == 0xffffffff {
-			it.finished = true
+			it.Finished = true
 			return false
 		}
 
@@ -264,9 +264,9 @@ func (it *Iter) Next() bool {
 	}
 
 	if sz != 0 {
-		bits, err := it.br.readBits(int(sz))
+		bits, err := it.Br.readBits(int(sz))
 		if err != nil {
-			it.err = err
+			it.Error = err
 			return false
 		}
 		if bits > (1 << (sz - 1)) {
@@ -276,40 +276,40 @@ func (it *Iter) Next() bool {
 		dod = int32(bits)
 	}
 
-	tDelta := it.tDelta + uint32(dod)
+	tDelta := it.TDelta + uint32(dod)
 
-	it.tDelta = tDelta
-	it.t = it.t + it.tDelta
+	it.TDelta = tDelta
+	it.T = it.T + it.TDelta
 
 	// read compressed value
-	bit, err := it.br.readBit()
+	bit, err := it.Br.readBit()
 	if err != nil {
-		it.err = err
+		it.Error = err
 		return false
 	}
 
 	if bit == zero {
-		// it.val = it.val
+		// it.Val = it.Val
 	} else {
-		bit, itErr := it.br.readBit()
+		bit, itErr := it.Br.readBit()
 		if itErr != nil {
-			it.err = err
+			it.Error = err
 			return false
 		}
 		if bit == zero {
 			// reuse leading/trailing zero bits
-			// it.leading, it.trailing = it.leading, it.trailing
+			// it.Leading, it.Trailing = it.Leading, it.Trailing
 		} else {
-			bits, err := it.br.readBits(5)
+			bits, err := it.Br.readBits(5)
 			if err != nil {
-				it.err = err
+				it.Error = err
 				return false
 			}
-			it.leading = uint8(bits)
+			it.Leading = uint8(bits)
 
-			bits, err = it.br.readBits(6)
+			bits, err = it.Br.readBits(6)
 			if err != nil {
-				it.err = err
+				it.Error = err
 				return false
 			}
 			mbits := uint8(bits)
@@ -317,18 +317,18 @@ func (it *Iter) Next() bool {
 			if mbits == 0 {
 				mbits = 64
 			}
-			it.trailing = 64 - it.leading - mbits
+			it.Trailing = 64 - it.Leading - mbits
 		}
 
-		mbits := int(64 - it.leading - it.trailing)
-		bits, err := it.br.readBits(mbits)
+		mbits := int(64 - it.Leading - it.Trailing)
+		bits, err := it.Br.readBits(mbits)
 		if err != nil {
-			it.err = err
+			it.Error = err
 			return false
 		}
-		vbits := math.Float64bits(it.val)
-		vbits ^= (bits << it.trailing)
-		it.val = math.Float64frombits(vbits)
+		vbits := math.Float64bits(it.Val)
+		vbits ^= (bits << it.Trailing)
+		it.Val = math.Float64frombits(vbits)
 	}
 
 	return true
@@ -336,12 +336,12 @@ func (it *Iter) Next() bool {
 
 // Values at the current iterator position
 func (it *Iter) Values() (uint32, float64) {
-	return it.t, it.val
+	return it.T, it.Val
 }
 
 // Err error at the current iterator position
 func (it *Iter) Err() error {
-	return it.err
+	return it.Error
 }
 
 type errMarshal struct {
